@@ -1,9 +1,16 @@
 import { getQuestion } from "@/data/mockQuestions";
 
 const keywords: Record<string, string[]> = {
-  "depreciation-increase": ["tax", "net income", "add back", "cash", "retained earnings", "pp&e", "balance sheet"],
-  "enterprise-equity-bridge": ["common shareholder", "operations", "debt", "cash", "enterprise value", "equity value"],
-  "lbo-mental-math": ["40", "60", "1.5", "moic", "irr", "debt paydown"],
+  "acc-001": ["tax", "net income", "add back", "cash", "retained earnings", "pp&e", "balance sheet"],
+  "acc-002": ["deferred revenue", "liability", "cash", "recognition", "revenue"],
+  "val-001": ["common shareholder", "operations", "debt", "cash", "enterprise value", "equity value"],
+  "val-002": ["capital structure", "leverage", "interest", "tax", "equity"],
+  "val-003": ["terminal value", "wacc", "growth", "multiple", "discount"],
+  "lbo-001": ["40", "60", "1.5", "moic", "irr", "debt paydown"],
+  "lbo-002": ["sources", "uses", "sponsor equity", "debt", "fees"],
+  "lbo-003": ["ebitda", "debt paydown", "multiple", "margin", "growth"],
+  "ma-001": ["earnings", "financing", "shares", "synergies", "eps"],
+  "ma-002": ["stock", "p / e", "shares", "earnings", "accretion"],
 };
 
 export async function POST(request: Request) {
