@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import AuthModal from "@/components/auth/AuthModal";
 import { createClient } from "@/lib/supabase/client";
@@ -15,21 +15,43 @@ const emptyProgress: Progress = { solvedQuestionIds: [], activityDates: [], stre
 
 function dateKey(date: Date) { return date.toISOString().slice(0, 10); }
 function activityDays() { return Array.from({ length: 35 }, (_, index) => { const day = new Date(); day.setUTCDate(day.getUTCDate() - (34 - index)); return dateKey(day); }); }
-function guestProgress(): Progress { try { const submissions = JSON.parse(window.localStorage.getItem("tombstone_guest_submissions") ?? "[]") as { questionId: string; score: number; trapsTriggered: string[]; createdAt: string }[]; const solved = submissions.filter((item) => item.score >= 80 && item.trapsTriggered.length === 0); return { solvedQuestionIds: [...new Set(solved.map((item) => item.questionId))], activityDates: [...new Set(solved.map((item) => item.createdAt.slice(0, 10)))], streak: 0 }; } catch { return emptyProgress; } }
+function localProgress(userId?: string): Progress { try { const submissions = JSON.parse(window.localStorage.getItem("tombstone_guest_submissions") ?? "[]") as { questionId: string; score: number; trapsTriggered: string[]; createdAt: string; userId?: string }[]; const relevant = submissions.filter((item) => userId ? item.userId === userId : !item.userId); const solved = relevant.filter((item) => item.score >= 80 && item.trapsTriggered.length === 0); const activityDates = [...new Set(solved.map((item) => item.createdAt.slice(0, 10)))]; return { solvedQuestionIds: [...new Set(solved.map((item) => item.questionId))], activityDates, streak: streakFrom(activityDates) }; } catch { return emptyProgress; } }
+function guestProgress(): Progress { return localProgress(); }
+function trapsFrom(evaluation: unknown) { if (!evaluation || typeof evaluation !== "object") return []; const traps = (evaluation as { trapsTriggered?: unknown }).trapsTriggered; return Array.isArray(traps) ? traps.filter((trap): trap is string => typeof trap === "string") : []; }
+function streakFrom(activityDates: string[]) { const activeDays = new Set(activityDates); let streak = 0; const today = new Date(); while (activeDays.has(dateKey(new Date(today.getTime() - streak * 86_400_000)))) streak += 1; return streak; }
+function mergeProgress(remote: Progress, local: Progress): Progress { const activityDates = [...new Set([...remote.activityDates, ...local.activityDates])]; return { solvedQuestionIds: [...new Set([...remote.solvedQuestionIds, ...local.solvedQuestionIds])], activityDates, streak: streakFrom(activityDates) }; }
 
 export default function ProblemsDirectory() {
   const router = useRouter(); const supabase = useMemo(() => createClient(), []); const searchRef = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<User | null>(null); const [progress, setProgress] = useState<Progress>(emptyProgress); const [isMenuOpen, setIsMenuOpen] = useState(false); const [authOpen, setAuthOpen] = useState(false); const [authMessage, setAuthMessage] = useState(""); const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [category, setCategory] = useState("All Categories"); const [difficulty, setDifficulty] = useState<"All" | Difficulty>("All"); const [search, setSearch] = useState(""); const [firm, setFirm] = useState("");
-  const loadProgress = async () => { const response = await fetch("/api/progress", { cache: "no-store" }); if (response.ok) { const data = await response.json() as Progress & { authenticated: boolean }; setProgress(data.authenticated ? data : guestProgress()); } };
-  const syncUser = async () => { const { data: { user: sessionUser } } = await supabase.auth.getUser(); setUser(sessionUser); if (sessionUser) await loadProgress(); else setProgress(guestProgress()); };
+  const loadProgress = useCallback(async () => {
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
+    if (!sessionUser) { setProgress(guestProgress()); return; }
+    const pendingLocalProgress = localProgress(sessionUser.id);
+    const response = await fetch("/api/progress", { cache: "no-store" });
+    if (response.ok) {
+      const data = await response.json() as Progress & { authenticated: boolean };
+      if (data.authenticated) { setProgress(mergeProgress(data, pendingLocalProgress)); return; }
+    }
+
+    // The browser client retains the current auth token even while a server-side
+    // session cookie is being refreshed. Read directly as a safe fallback so a
+    // completed drill is visible immediately after navigation.
+    const { data } = await supabase.from("submissions").select("question_id, score, created_at, evaluation").eq("user_id", sessionUser.id);
+    const solvedSubmissions = (data ?? []).filter((submission) => submission.score >= 80 && trapsFrom(submission.evaluation).length === 0);
+    const activityDates = [...new Set(solvedSubmissions.map((submission) => dateKey(new Date(submission.created_at))))];
+    setProgress(mergeProgress({ solvedQuestionIds: [...new Set(solvedSubmissions.map((submission) => submission.question_id))], activityDates, streak: streakFrom(activityDates) }, pendingLocalProgress));
+  }, [supabase]);
+  const syncUser = useCallback(async () => { const { data: { user: sessionUser } } = await supabase.auth.getUser(); setUser(sessionUser); if (sessionUser) await loadProgress(); else setProgress(guestProgress()); }, [loadProgress, supabase]);
   useEffect(() => {
+    const initialLoad = window.setTimeout(() => { void syncUser(); }, 0);
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) void loadProgress(); else setProgress(guestProgress());
     });
-    return () => subscription.unsubscribe();
-  }, [supabase]);
+    return () => { window.clearTimeout(initialLoad); subscription.unsubscribe(); };
+  }, [loadProgress, supabase, syncUser]);
   useEffect(() => { const handler = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchRef.current?.focus(); } }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, []);
   const filtered = useMemo(() => mockQuestions.filter((question) => (category === "All Categories" || question.category === category) && (difficulty === "All" || question.difficulty === difficulty) && (!firm || question.firms.includes(firm)) && (!search || `${question.title} ${question.firms.join(" ")} ${question.subTopics.join(" ")}`.toLowerCase().includes(search.toLowerCase()))), [category, difficulty, firm, search]);
   const trendingFirms = useMemo(() => [...new Set(mockQuestions.flatMap((question) => question.firms))].map((name) => ({ name, count: mockQuestions.filter((question) => question.firms.includes(name)).length })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).slice(0, 4), []);

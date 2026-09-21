@@ -87,11 +87,12 @@ export async function POST(request: Request) {
     const evaluation = normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps);
     const supabase = await createSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
+    let persistence: "saved" | "guest" | "failed" = user ? "failed" : "guest";
     if (user) {
       const { error: submissionError } = await supabase.from("submissions").insert({ user_id: user.id, question_id: question.id, score: evaluation.score, evaluation });
-      if (submissionError) console.error("Failed to persist submission", submissionError);
+      if (submissionError) console.error("Failed to persist submission", submissionError); else persistence = "saved";
     }
-    return Response.json(evaluation);
+    return Response.json({ ...evaluation, persistence });
   } catch (err: unknown) {
     console.error("Gemini Failure:", err);
     return Response.json(
