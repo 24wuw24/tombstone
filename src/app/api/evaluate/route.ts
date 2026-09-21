@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { getQuestion } from "@/data/mockQuestions";
+import { createClient as createSupabaseClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -83,7 +84,14 @@ export async function POST(request: Request) {
       },
     });
     if (!response.text) throw new Error("Gemini returned an empty evaluation.");
-    return Response.json(normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps));
+    const evaluation = normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps);
+    const supabase = await createSupabaseClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error: submissionError } = await supabase.from("submissions").insert({ user_id: user.id, question_id: question.id, score: evaluation.score, evaluation });
+      if (submissionError) console.error("Failed to persist submission", submissionError);
+    }
+    return Response.json(evaluation);
   } catch (err: unknown) {
     console.error("Gemini Failure:", err);
     return Response.json(
