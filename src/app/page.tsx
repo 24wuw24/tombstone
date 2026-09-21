@@ -15,17 +15,18 @@ const emptyProgress: Progress = { solvedQuestionIds: [], activityDates: [], stre
 
 function dateKey(date: Date) { return date.toISOString().slice(0, 10); }
 function activityDays() { return Array.from({ length: 35 }, (_, index) => { const day = new Date(); day.setUTCDate(day.getUTCDate() - (34 - index)); return dateKey(day); }); }
+function guestProgress(): Progress { try { const submissions = JSON.parse(window.localStorage.getItem("tombstone_guest_submissions") ?? "[]") as { questionId: string; score: number; trapsTriggered: string[]; createdAt: string }[]; const solved = submissions.filter((item) => item.score >= 80 && item.trapsTriggered.length === 0); return { solvedQuestionIds: [...new Set(solved.map((item) => item.questionId))], activityDates: [...new Set(solved.map((item) => item.createdAt.slice(0, 10)))], streak: 0 }; } catch { return emptyProgress; } }
 
 export default function ProblemsDirectory() {
   const router = useRouter(); const supabase = useMemo(() => createClient(), []); const searchRef = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<User | null>(null); const [progress, setProgress] = useState<Progress>(emptyProgress); const [isMenuOpen, setIsMenuOpen] = useState(false); const [authOpen, setAuthOpen] = useState(false); const [authMessage, setAuthMessage] = useState(""); const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [category, setCategory] = useState("All Categories"); const [difficulty, setDifficulty] = useState<"All" | Difficulty>("All"); const [search, setSearch] = useState(""); const [firm, setFirm] = useState("");
-  const loadProgress = async () => { const response = await fetch("/api/progress", { cache: "no-store" }); if (response.ok) { const data = await response.json() as Progress & { authenticated: boolean }; setProgress(data.authenticated ? data : emptyProgress); } };
-  const syncUser = async () => { const { data: { user: sessionUser } } = await supabase.auth.getUser(); setUser(sessionUser); if (sessionUser) await loadProgress(); else setProgress(emptyProgress); };
+  const loadProgress = async () => { const response = await fetch("/api/progress", { cache: "no-store" }); if (response.ok) { const data = await response.json() as Progress & { authenticated: boolean }; setProgress(data.authenticated ? data : guestProgress()); } };
+  const syncUser = async () => { const { data: { user: sessionUser } } = await supabase.auth.getUser(); setUser(sessionUser); if (sessionUser) await loadProgress(); else setProgress(guestProgress()); };
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) void loadProgress(); else setProgress(emptyProgress);
+      if (session?.user) void loadProgress(); else setProgress(guestProgress());
     });
     return () => subscription.unsubscribe();
   }, [supabase]);
