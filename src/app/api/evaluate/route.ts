@@ -76,16 +76,19 @@ export async function POST(request: Request) {
       model: "gemini-3.6-flash",
       contents: prompt,
       config: {
+        systemInstruction,
         responseMimeType: "application/json",
+        responseSchema: evaluationSchema,
+        temperature: 0.2,
       },
     });
     if (!response.text) throw new Error("Gemini returned an empty evaluation.");
     return Response.json(normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps));
-  } catch (err: any) {
-  console.error("Gemini Failure:", err);
-  return Response.json(
-    { error: err?.message || String(err) },
-    { status: 500 }
-  );
-}
+  } catch (err: unknown) {
+    console.error("Gemini Failure:", err);
+    return Response.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
 }
