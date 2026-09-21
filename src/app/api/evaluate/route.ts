@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = JSON.stringify({ questionPrompt: question.prompt, idealResponse: question.idealResponse, requiredMilestones: question.rubric.requiredMilestones, commonTraps: question.rubric.commonTraps, candidateAnswer: body.userAnswer });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
