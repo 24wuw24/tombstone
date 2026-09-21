@@ -79,8 +79,11 @@ export async function POST(request: Request) {
     });
     if (!response.text) throw new Error("Gemini returned an empty evaluation.");
     return Response.json(normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps));
-  } catch (error) {
-    console.error("Gemini evaluation failed", error);
-    return Response.json({ error: "Unable to evaluate this response right now. Please try again." }, { status: 502 });
-  }
+  } catch (err: any) {
+  console.error("Gemini Failure:", err);
+  return Response.json(
+    { error: err?.message || String(err) },
+    { status: 500 }
+  );
+}
 }
