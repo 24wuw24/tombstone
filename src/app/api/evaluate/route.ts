@@ -73,9 +73,11 @@ export async function POST(request: Request) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = JSON.stringify({ questionPrompt: question.prompt, idealResponse: question.idealResponse, requiredMilestones: question.rubric.requiredMilestones, commonTraps: question.rubric.commonTraps, candidateAnswer: body.userAnswer });
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
-      config: { systemInstruction, responseMimeType: "application/json", responseSchema: evaluationSchema, temperature: 0.2 },
+      config: {
+        responseMimeType: "application/json",
+      },
     });
     if (!response.text) throw new Error("Gemini returned an empty evaluation.");
     return Response.json(normalizeEvaluation(JSON.parse(response.text), question.rubric.requiredMilestones, question.rubric.commonTraps));
