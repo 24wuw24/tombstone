@@ -7,18 +7,18 @@ import AuthModal from "@/components/auth/AuthModal";
 import AppHeader from "@/components/layout/AppHeader";
 import { createClient } from "@/lib/supabase/client";
 import { categories, mockQuestions, type Difficulty } from "@/data/mockQuestions";
+import { activityDayKeys, browserTimeZone, dayKeyInTimeZone, streakFromActivityDates } from "@/lib/progress-time";
 
 const difficultyStyles: Record<Difficulty, string> = { Easy: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", Medium: "border-amber-500/30 bg-amber-500/10 text-amber-400", Hard: "border-rose-500/30 bg-rose-500/10 text-rose-400" };
 const physical = "border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] active:translate-y-0.5 active:shadow-inner";
 type Progress = { solvedQuestionIds: string[]; activityDates: string[]; streak: number };
 const emptyProgress: Progress = { solvedQuestionIds: [], activityDates: [], streak: 0 };
 
-function dateKey(date: Date) { return date.toISOString().slice(0, 10); }
-function activityDays() { return Array.from({ length: 35 }, (_, index) => { const day = new Date(); day.setUTCDate(day.getUTCDate() - (34 - index)); return dateKey(day); }); }
-function localProgress(userId?: string): Progress { try { const submissions = JSON.parse(window.localStorage.getItem("tombstone_guest_submissions") ?? "[]") as { questionId: string; score: number; trapsTriggered: string[]; createdAt: string; userId?: string }[]; const relevant = submissions.filter((item) => userId ? item.userId === userId : !item.userId); const solved = relevant.filter((item) => item.score >= 80 && item.trapsTriggered.length === 0); const activityDates = [...new Set(solved.map((item) => item.createdAt.slice(0, 10)))]; return { solvedQuestionIds: [...new Set(solved.map((item) => item.questionId))], activityDates, streak: streakFrom(activityDates) }; } catch { return emptyProgress; } }
+function activityDays() { return activityDayKeys(35, browserTimeZone()); }
+function localProgress(userId?: string): Progress { try { const timeZone = browserTimeZone(); const submissions = JSON.parse(window.localStorage.getItem("tombstone_guest_submissions") ?? "[]") as { questionId: string; score: number; trapsTriggered: string[]; createdAt: string; userId?: string }[]; const relevant = submissions.filter((item) => userId ? item.userId === userId : !item.userId); const solved = relevant.filter((item) => item.score >= 80 && item.trapsTriggered.length === 0); const activityDates = [...new Set(solved.map((item) => dayKeyInTimeZone(new Date(item.createdAt), timeZone)))]; return { solvedQuestionIds: [...new Set(solved.map((item) => item.questionId))], activityDates, streak: streakFrom(activityDates) }; } catch { return emptyProgress; } }
 function guestProgress(): Progress { return localProgress(); }
 function trapsFrom(evaluation: unknown) { if (!evaluation || typeof evaluation !== "object") return []; const traps = (evaluation as { trapsTriggered?: unknown }).trapsTriggered; return Array.isArray(traps) ? traps.filter((trap): trap is string => typeof trap === "string") : []; }
-function streakFrom(activityDates: string[]) { const activeDays = new Set(activityDates); let streak = 0; const today = new Date(); while (activeDays.has(dateKey(new Date(today.getTime() - streak * 86_400_000)))) streak += 1; return streak; }
+function streakFrom(activityDates: string[]) { return streakFromActivityDates(activityDates, browserTimeZone()); }
 function mergeProgress(remote: Progress, local: Progress): Progress { const activityDates = [...new Set([...remote.activityDates, ...local.activityDates])]; return { solvedQuestionIds: [...new Set([...remote.solvedQuestionIds, ...local.solvedQuestionIds])], activityDates, streak: streakFrom(activityDates) }; }
 
 export default function ProblemsDirectory() {
@@ -29,7 +29,7 @@ export default function ProblemsDirectory() {
     const { data: { user: sessionUser } } = await supabase.auth.getUser();
     if (!sessionUser) { setProgress(guestProgress()); return; }
     const pendingLocalProgress = localProgress(sessionUser.id);
-    const response = await fetch("/api/progress", { cache: "no-store" });
+    const timeZone = browserTimeZone(); const response = await fetch(`/api/progress?timeZone=${encodeURIComponent(timeZone)}`, { cache: "no-store" });
     if (response.ok) {
       const data = await response.json() as Progress & { authenticated: boolean };
       if (data.authenticated) { setProgress(mergeProgress(data, pendingLocalProgress)); return; }
@@ -40,7 +40,7 @@ export default function ProblemsDirectory() {
     // completed drill is visible immediately after navigation.
     const { data } = await supabase.from("submissions").select("question_id, score, created_at, evaluation").eq("user_id", sessionUser.id);
     const solvedSubmissions = (data ?? []).filter((submission) => submission.score >= 80 && trapsFrom(submission.evaluation).length === 0);
-    const activityDates = [...new Set(solvedSubmissions.map((submission) => dateKey(new Date(submission.created_at))))];
+    const activityDates = [...new Set(solvedSubmissions.map((submission) => dayKeyInTimeZone(new Date(submission.created_at), timeZone)))];
     setProgress(mergeProgress({ solvedQuestionIds: [...new Set(solvedSubmissions.map((submission) => submission.question_id))], activityDates, streak: streakFrom(activityDates) }, pendingLocalProgress));
   }, [supabase]);
   const syncUser = useCallback(async () => { const { data: { user: sessionUser } } = await supabase.auth.getUser(); setUser(sessionUser); if (sessionUser) await loadProgress(); else setProgress(guestProgress()); }, [loadProgress, supabase]);

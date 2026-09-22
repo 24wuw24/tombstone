@@ -7,6 +7,7 @@ import type { User } from "@supabase/supabase-js";
 import AuthModal from "@/components/auth/AuthModal";
 import UserDropdown from "@/components/auth/UserDropdown";
 import { createClient } from "@/lib/supabase/client";
+import { browserTimeZone } from "@/lib/progress-time";
 
 type AppHeaderProps = { children?: ReactNode; wide?: boolean };
 const navItems = [{ label: "Problems", href: "/" }, { label: "Activity", href: "/profile" }, { label: "History", href: "/history" }];
@@ -21,7 +22,7 @@ export default function AppHeader({ children, wide = false }: AppHeaderProps) {
       if (cancelled) return;
       setUser(sessionUser);
       if (!sessionUser) { setStreak(0); return; }
-      const response = await fetch("/api/progress", { cache: "no-store" });
+      const response = await fetch(`/api/progress?timeZone=${encodeURIComponent(browserTimeZone())}`, { cache: "no-store" });
       if (!cancelled && response.ok) { const progress = await response.json() as { authenticated?: boolean; streak?: number }; setStreak(progress.authenticated ? progress.streak ?? 0 : 0); }
     };
     const timer = window.setTimeout(() => { void sync(); }, 0);
